@@ -15,11 +15,11 @@
                 "--model", "llama"
             ],
             "env": {
-                "PATH": "/its/home/kajm20/miniconda3/envs/reflexion-llama/bin",
-                "CONDA_DEFAULT_ENV": "reflexion-llama",
+                "PATH": "/its/home/kajm20/miniconda3/envs/reflexion/bin",
+                "CONDA_DEFAULT_ENV": "reflexion",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
             },
-            "pythonPath": "/its/home/kajm20/miniconda3/envs/reflexion-llama/bin/python",
+            "pythonPath": "/its/home/kajm20/miniconda3/envs/reflexion/bin/python",
             "console": "integratedTerminal",
             "cwd": "/its/home/kajm20/reflexion/alfworld_runs"
         }
