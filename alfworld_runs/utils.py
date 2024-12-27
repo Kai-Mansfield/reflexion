@@ -3,8 +3,8 @@ import sys
 import openai
 from tenacity import (
     retry,
-    stop_after_attempt,  # type: ignore
-    wait_random_exponential,  # type: ignore
+    stop_after_attempt, # type: ignore
+    wait_random_exponential, # type: ignore
 )
 from typing import Optional, List
 
@@ -15,49 +15,32 @@ else:
 
 from transformers import pipeline, AutoModelForCausalLM, AutoTokenizer
 import torch
-from torch.nn import DataParallel
+import torch.distributed as dist
 
 Model = Literal["gpt-4", "gpt-3.5-turbo", "text-davinci-003", "llama"]
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai.api_key = os.getenv('OPENAI_API_KEY')
 
-# Hugging Face setup for LLaMA with multi-GPU support
-llama_model_name = "meta-llama/Llama-3.2-1B-Instruct"  # Replace with the actual path or model name
+device_map = "balanced"  # Automatically balance the model across GPUs
+model_name = "meta-llama/Llama-3.2-1B-Instruct" 
 
-# Load model and tokenizer
-llama_model = AutoModelForCausalLM.from_pretrained(llama_model_name)
-llama_tokenizer = AutoTokenizer.from_pretrained(llama_model_name)
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name, device_map=device_map)
 
-# Wrap the model with DataParallel for multi-GPU support
-if torch.cuda.device_count() > 1:
-    llama_model = DataParallel(llama_model)
-llama_model = llama_model.to("cuda")
+local_rank = int(os.getenv("LOCAL_RANK", 0))  # Get the local rank from environment variables
+device = f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")
 
-# Create a custom generation function for multi-GPU
-def llama_generate(prompt: str, max_length: int, temperature: float):
-    input_ids = llama_tokenizer(prompt, return_tensors="pt").input_ids.to("cuda")
-    if isinstance(llama_model, DataParallel):
-        outputs = llama_model.module.generate(  # Access the `generate` method of the underlying model
-            input_ids,
-            max_length=max_length,
-            temperature=temperature,
-            pad_token_id=llama_tokenizer.pad_token_id,  # Ensure proper padding
-            do_sample=False,
-        )
-    else:
-        outputs = llama_model.generate(
-            input_ids,
-            max_length=max_length,
-            temperature=temperature,
-            pad_token_id=llama_tokenizer.pad_token_id,
-            do_sample=False,
-        )
-    return llama_tokenizer.decode(outputs[0], skip_special_tokens=True)
+llama_pipeline = pipeline(
+    "text-generation",
+    model="meta-llama/Llama-3.2-1B-Instruct"
+    # Remove the device argument to allow accelerate to handle it
+)
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
 def get_completion(prompt: str, temperature: float = 0.0, max_tokens: int = 256, stop_strs: Optional[List[str]] = None) -> str:
     response = openai.Completion.create(
-        model="text-davinci-003",
+        model='text-davinci-003',
         prompt=prompt,
         temperature=temperature,
         max_tokens=max_tokens,
@@ -69,24 +52,42 @@ def get_completion(prompt: str, temperature: float = 0.0, max_tokens: int = 256,
     return response.choices[0].text
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
-def get_chat(
-    prompt: str,
-    model: Model,
-    temperature: float = 0.0,
-    max_tokens: int = 2560,
-    stop_strs: Optional[List[str]] = None,
-    is_batched: bool = False,
-) -> str:
+def get_chat(prompt: str, model: Model, temperature: float = 0.0, max_tokens: int = 2560, stop_strs: Optional[List[str]] = None, is_batched: bool = False) -> str:
     if model == "llama":
-        # Use the custom multi-GPU generation function
-        print("Using LLaMA on multiple GPUs")
-        return llama_generate(prompt, max_length=max_tokens, temperature=temperature)
+        # Initialize the distributed process group (for multi-GPU usage)
+        dist.init_process_group("nccl")
 
+        # Get global rank to uniquely identify each process
+        global_rank = int(os.getenv("RANK", 0))
+
+        # Use pipeline for text generation on the specific GPU
+        result = llama_pipeline(
+            prompt,
+            max_length=max_tokens,
+            temperature=temperature,
+            pad_token_id=tokenizer.pad_token_id,  # Ensure proper padding
+            do_sample=False
+        )
+
+        # Gather responses from all GPUs
+        world_size = dist.get_world_size()
+        responses = [None] * world_size
+        dist.all_gather_object(responses, result[0]["generated_text"])
+
+        # Rank 0 aggregates and returns the results
+        if global_rank == 0:
+            aggregated_response = " ".join(responses)
+            return aggregated_response
+
+        # Clean up the distributed process group
+        dist.destroy_process_group()
+
+    # If not using LLaMA, fallback to OpenAI models
     assert model != "text-davinci-003"
     messages = [
         {
             "role": "user",
-            "content": prompt,
+            "content": prompt
         }
     ]
     response = openai.ChatCompletion.create(

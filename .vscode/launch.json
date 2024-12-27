@@ -2,12 +2,15 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run Python Script with Args",
+            "name": "Run Distributed with srun",
             "type": "python",
-            "justMyCode": false,
             "request": "launch",
-            "program": "/its/home/kajm20/reflexion/alfworld_runs/main.py",
+            "program": "/its/home/kajm20/miniconda3/envs/reflexion/bin/python",
             "args": [
+                "-m", "torch.distributed.launch",
+                "--nproc_per_node=2",
+                "--use_env",
+                "/its/home/kajm20/reflexion/alfworld_runs/main.py",
                 "--num_trials", "10",
                 "--num_envs", "134",
                 "--run_name", "reflexion_run_logs",
@@ -19,20 +22,16 @@
                 "CONDA_DEFAULT_ENV": "reflexion",
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
             },
-            "pythonPath": "/its/home/kajm20/miniconda3/envs/reflexion/bin/python",
             "console": "integratedTerminal",
-            "cwd": "/its/home/kajm20/reflexion/alfworld_runs"
+            "cwd": "/its/home/kajm20/reflexion/alfworld_runs",
+            "runtimeExecutable": "srun",
+            "runtimeArgs": [
+                "--nodes=1",
+                "--ntasks=1",
+                "--gpus=2",
+                "--time=01:00:00",
+                "--partition=<partition_name>"
+            ]
         }
     ]
 }
-
-  
-
-  
-  
-  
-  
-  
-  
-
-
