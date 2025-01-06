@@ -133,3 +133,5 @@ scratch/
 scratch/
 
 .DS_Store/
+
+.git-credentials
