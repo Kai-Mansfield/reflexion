@@ -115,5 +115,9 @@ def main(args) -> None:
 
 
 if __name__ == '__main__':
+    node_list = os.environ.get("SLURM_NODELIST", "Node information not available")
+    node_id = os.environ.get('SLURM_NODEID', 'No node ID found')
+    print(f"Main script running on nodes: {node_list}")
+    print(f"Node ID: {node_id}")
     args = get_args()
     main(args)
