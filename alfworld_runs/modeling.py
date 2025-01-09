@@ -326,7 +326,35 @@ def set_module_tensor_to_device(
                 if not is_buffer:
                     module._parameters[tensor_name] = param_cls(new_value, requires_grad=old_value.requires_grad)
         elif isinstance(value, torch.Tensor):
-            new_value = value.to(device)
+            import socket
+            import pickle
+            if not hasattr(set_module_tensor_to_device, "i"):
+                set_module_tensor_to_device.i = 0
+            if set_module_tensor_to_device.i %2 == 0:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect(("artemis-a40-12", 12345))  # Replace with the server's address and port
+
+                # Send a command to the server (GET tensor, ADD 1, or SET tensor)
+                command = "SET tensor"  # Command to set a new tensor
+                s.sendall(command.encode())  # Send command to the server
+
+                # Serialize the tensor
+                tensor_data = pickle.dumps(value)
+
+                # Send the length of the data first
+                s.sendall(len(tensor_data).to_bytes(4, 'big'))
+
+                # Send the serialized tensor data
+                s.sendall(tensor_data)
+
+                # Receive a response from the server
+                response = s.recv(1024)
+                print(response.decode())  # Print the server's response
+
+                # Clean up the connection
+                s.close()
+            else:
+                new_value = value.to(device)
         else:
             new_value = torch.tensor(value, device=device)
         if device_quantization is not None:
@@ -362,7 +390,37 @@ def set_module_tensor_to_device(
                     requires_grad=old_value.requires_grad,
                 ).to(device)
             else:
-                new_value = param_cls(new_value, requires_grad=old_value.requires_grad).to(device)
+                if set_module_tensor_to_device.i %2 == 0:
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.connect(("artemis-a40-12", 12345))  # Replace with the server's address and port
+
+                    # Send a command to the server (GET tensor, ADD 1, or SET tensor)
+                    command = "SET param"  # Command to set a new tensor
+                    s.sendall(command.encode())  # Send command to the server
+
+                    data = {
+                        'param_cls': param_cls,
+                        'old_value': old_value,
+                        'device': device
+                    }
+
+                    # Serialize the tensor
+                    tensor_data = pickle.dumps(data)
+
+                    # Send the length of the data first
+                    s.sendall(len(tensor_data).to_bytes(4, 'big'))
+
+                    # Send the serialized tensor data
+                    s.sendall(tensor_data)
+
+                    # Receive a response from the server
+                    response = s.recv(1024)
+                    print(response.decode())  # Print the server's response
+
+                    # Clean up the connection
+                    s.close()
+                else:
+                    new_value = param_cls(new_value, requires_grad=old_value.requires_grad).to(device)
 
             module._parameters[tensor_name] = new_value
             if fp16_statistics is not None:
@@ -840,6 +898,35 @@ def get_max_memory(max_memory: Optional[Dict[Union[int, str], Union[int, str]]] 
                 try:
                     _ = torch.tensor([0], device=i)
                     max_memory[i] = torch.cuda.mem_get_info(i)[0]
+
+                    # import subprocess
+
+                    # # Define your Python command and node details
+                    # python_command = "import torch; print(torch.tensor([0], device=0))"
+                    # conda_env = "reflexion"
+                    # node = "artemis-a40-12"
+
+                    # # Full command including sourcing conda.sh
+                    # command = (
+                    #     f"source ~/miniconda3/etc/profile.d/conda.sh && "
+                    #     f"conda activate {conda_env} && "
+                    #     f"python -c '{python_command}'"
+                    # )
+
+                    # # Use ssh to run the command on the other node
+                    # process = subprocess.Popen(
+                    #     f"ssh {node} bash -c \"{command}\"",
+                    #     shell=True,
+                    #     stdout=subprocess.PIPE,
+                    #     stderr=subprocess.PIPE,
+                    # )
+
+                    # stdout, stderr = process.communicate()
+
+                    # # Print the outputs from the subprocess
+                    # print("Subprocess STDOUT:", stdout.decode().strip())
+                    # print("Subprocess STDERR:", stderr.decode().strip())
+                    # print("\n")
                 except Exception:
                     logger.info(f"Device {i} seems unavailable, Proceeding to check subsequent devices.")
                     continue
