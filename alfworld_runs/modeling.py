@@ -326,7 +326,8 @@ def set_module_tensor_to_device(
                 if not is_buffer:
                     module._parameters[tensor_name] = param_cls(new_value, requires_grad=old_value.requires_grad)
         elif isinstance(value, torch.Tensor):
-            new_value = value.to(device)
+            print()
+            #new_value = value.to(device)
         else:
             new_value = torch.tensor(value, device=device)
         if device_quantization is not None:
@@ -362,9 +363,10 @@ def set_module_tensor_to_device(
                     requires_grad=old_value.requires_grad,
                 ).to(device)
             else:
-                new_value = param_cls(new_value, requires_grad=old_value.requires_grad).to(device)
+                print()
+                #new_value = param_cls(new_value, requires_grad=old_value.requires_grad).to(device)
 
-            module._parameters[tensor_name] = new_value
+            #module._parameters[tensor_name] = new_value
             if fp16_statistics is not None:
                 module._parameters[tensor_name].SCB = fp16_statistics.to(device)
                 del fp16_statistics
